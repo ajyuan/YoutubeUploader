@@ -5,13 +5,16 @@ import os
 import random
 import time
 import configparser
-import google.oauth2.credentials
-import google_auth_oauthlib.flow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 from googleapiclient.http import MediaFileUpload
 
+from oauth2client.client import flow_from_clientsecrets
+from oauth2client.tools import run_flow
+from oauth2client.file import Storage
+
 UPLOAD_DIRECTORY = None
+STORAGE = Storage('credentials.storage')
 youtube = None
 UPLOAD_DESCRIPTION = None
 UPLOAD_PRIVACY = None
@@ -27,8 +30,8 @@ RETRIABLE_EXCEPTIONS = (httplib2.HttpLib2Error, IOError, http.client.NotConnecte
 # Always retry when an apiclient.errors.HttpError with one of these status
 # codes is raised.
 RETRIABLE_STATUS_CODES = [500, 502, 503, 504]
-CLIENT_SECRETS_FILE = 'client_secret.json'
-SCOPES = ['https://www.googleapis.com/auth/youtube.upload']
+CLIENT_SECRET = 'client_secret.json'
+SCOPE = ['https://www.googleapis.com/auth/youtube.upload']
 API_SERVICE_NAME = 'youtube'
 API_VERSION = 'v3'
 VALID_PRIVACY_STATUSES = ('public', 'private', 'unlisted')
@@ -53,9 +56,8 @@ def init():
     if not os.path.exists(UPLOAD_DIRECTORY):
         os.makedirs(UPLOAD_DIRECTORY)
     
-    flow = google_auth_oauthlib.flow.InstalledAppFlow.from_client_secrets_file(
-        CLIENT_SECRETS_FILE, SCOPES)
-    credentials = flow.run_console()
+    print('Forming credentals...')
+    credentials = authorize_credentials()
     youtube = build(API_SERVICE_NAME, API_VERSION, credentials=credentials)
 
 # CALL THIS METHOD TO UPLOAD ALL FILES IN THE UPLOAD FOLDER
@@ -66,7 +68,9 @@ def uploadAll():
         files.extend(filenames)
         break
 
-    os.chdir(UPLOAD_DIRECTORY)
+    files = [UPLOAD_DIRECTORY + curr for curr in files]
+
+    #os.chdir(UPLOAD_DIRECTORY)
     for curFile in files:
         print("Now uploading: " + curFile)
         args = argparse.Namespace(file=curFile,
@@ -81,8 +85,19 @@ def uploadAll():
         except HttpError as e:
             print('An HTTP error %d occurred:\n%s' %
                   (e.resp.status, e.content))
-    os.chdir("..")
+    #os.chdir("..")
 
+# Start the OAuth flow to retrieve credentials
+def authorize_credentials():
+    global STORAGE
+    global CLIENT_SECRET
+    global SCOPE
+    credentials = STORAGE.get()
+    if credentials is None or credentials.invalid:
+        flow = flow_from_clientsecrets(CLIENT_SECRET, scope=SCOPE)
+        http = httplib2.Http()
+        credentials = run_flow(flow, STORAGE, http=http)
+    return credentials
 
 def initialize_upload(youtube, options):
     tags = None
